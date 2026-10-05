@@ -83,7 +83,8 @@ let sessions=store.get('sessions',[]), cur=store.get('cur',null), abort=null;
 $('host').value=store.get('host','');$('system').value=store.get('system','');
 $('temp').value=store.get('temp',0.7);$('tv').textContent=$('temp').value;
 
-const base=()=>($('host').value.trim().replace(/\/$/,''))||'';
+let proxied=false; // true = 由 serve.py / 桌面版代理，目標位址存在伺服器端
+const base=()=>proxied?'':($('host').value.trim().replace(/\/$/,''))||'';
 const session=()=>sessions.find(s=>s.id===cur);
 const save=()=>{store.set('sessions',sessions);store.set('cur',cur)};
 
@@ -195,12 +196,19 @@ $('send').onclick=send;$('newChat').onclick=newChat;$('refresh').onclick=loadMod
 $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}});
 $('input').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,200)+'px'});
 $('model').onchange=()=>store.set('model',$('model').value);
-$('host').onchange=()=>{store.set('host',$('host').value);loadModels()};
+$('host').onchange=async()=>{
+  if(proxied){try{await fetch('/__config',{method:'POST',body:JSON.stringify({target:$('host').value})})}catch{}}
+  else store.set('host',$('host').value);
+  loadModels()};
 $('system').onchange=()=>store.set('system',$('system').value);
 $('temp').oninput=()=>{$('tv').textContent=$('temp').value;store.set('temp',+$('temp').value)};
 
 if(!session()&&sessions.length)cur=sessions[0].id;
-render();loadModels();
+(async()=>{
+  try{const r=await fetch('/__config');if(r.ok){proxied=true;$('host').value=(await r.json()).target;$('host').placeholder='例如 192.168.1.10:11434'}}catch{}
+  loadModels();
+})();
+render();
 </script>
 </body>
 </html>
