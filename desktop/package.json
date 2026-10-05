@@ -1,0 +1,21 @@
+{
+  "name": "ollama-ui-desktop",
+  "version": "1.0.0",
+  "description": "Ollama UI 桌面版",
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/copy-ui.js && electron .",
+    "build": "node scripts/copy-ui.js && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.ollama-ui.desktop",
+    "productName": "Ollama UI",
+    "files": ["main.js", "server.js", "index.html"],
+    "win": { "target": ["nsis", "portable"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}
