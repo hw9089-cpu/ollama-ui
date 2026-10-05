@@ -10,7 +10,9 @@
 import http.client
 import json
 import os
+import platform
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "8080"))
@@ -42,6 +44,44 @@ def load_target():
 state = {"target": load_target()}
 
 
+def is_local(target):
+    return target.split(":")[0] in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
+
+
+def local_sys():
+    """本機 CPU / 記憶體 / 磁碟。優先 psutil，否則退回 /proc（Linux）。"""
+    info = {"host": platform.node(), "os": f"{platform.system()} {platform.release()}"}
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        info.update(cpu=psutil.cpu_percent(interval=0.3), cores=psutil.cpu_count(),
+                    mem_used=vm.total - vm.available, mem_total=vm.total,
+                    disk=psutil.disk_usage(os.path.expanduser("~")).percent)
+        try:
+            t = psutil.sensors_temperatures()
+            for k in ("coretemp", "k10temp", "cpu_thermal"):
+                if k in t and t[k]:
+                    info["temp"] = t[k][0].current
+                    break
+        except Exception:
+            pass
+        return info
+    except ImportError:
+        pass
+    try:  # Linux 後備
+        mem = {l.split(":")[0]: int(l.split()[1]) * 1024 for l in open("/proc/meminfo")}
+
+        def cpu_times():
+            v = list(map(int, open("/proc/stat").readline().split()[1:]))
+            return sum(v), v[3] + v[4]
+        t1, i1 = cpu_times(); time.sleep(0.3); t2, i2 = cpu_times()
+        info.update(cpu=round(100 * (1 - (i2 - i1) / max(1, t2 - t1)), 1), cores=os.cpu_count(),
+                    mem_total=mem["MemTotal"], mem_used=mem["MemTotal"] - mem["MemAvailable"])
+    except Exception as e:
+        info["error"] = str(e)
+    return info
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"  # 以連線關閉結束串流，最簡單
 
@@ -50,6 +90,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.proxy()
         if self.path == "/__config":
             return self.json({"target": state["target"]})
+        if self.path == "/__sys":
+            # 目標是遠端 serve.py 時，向它要「那台機器」的資源；目標是本機 Ollama 時就取本機
+            target = state["target"]
+            if is_local(target):
+                return self.json(local_sys())
+            try:
+                c = http.client.HTTPConnection(target, timeout=4)
+                c.request("GET", "/__sys")
+                r = c.getresponse()
+                if r.status == 200:
+                    return self.json(json.loads(r.read()))
+            except Exception:
+                pass
+            return self.json({"error": "遠端沒有提供系統資訊（請在 Ollama 那台機器執行 serve.py）"})
         if self.path in ("/", "/index.html"):
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 body = f.read()
@@ -81,6 +135,19 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             return self.json({"target": state["target"]})
+        if self.path.startswith("/__save"):
+            # 匯出檔案到 ~/Downloads/ollama-ui/（桌面版沒有瀏覽器下載功能時使用），只允許本機
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                return self.send_error(403)
+            from urllib.parse import parse_qs, urlparse
+            name = os.path.basename(parse_qs(urlparse(self.path).query).get("name", ["export.txt"])[0]) or "export.txt"
+            length = int(self.headers.get("Content-Length") or 0)
+            folder = os.path.join(os.path.expanduser("~"), "Downloads", "ollama-ui")
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, name)
+            with open(path, "wb") as f:
+                f.write(self.rfile.read(length))
+            return self.json({"path": path})
         self.send_error(404)
 
     def do_DELETE(self):

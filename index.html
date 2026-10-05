@@ -121,7 +121,25 @@ h3 i{font-style:normal;color:var(--blue)}
 .sbox label{color:var(--muted);display:flex;flex-direction:column;gap:5px}
 .sbox p{margin:0;font-size:12px;color:var(--muted)}
 
+.sys{padding:12px 16px}
+.smeters{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.sm span{color:var(--muted);font-size:12px}.sm b{float:right;font-size:13px}
+.meter{height:8px;border-radius:5px;background:#12254a;margin-top:6px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;border-radius:5px;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .6s}
+.acts{display:flex;gap:6px;margin-top:6px;opacity:0;transition:.15s}.msg:hover .acts{opacity:1}
+.acts button{font-size:11px;padding:1px 9px;background:none;color:var(--muted)}
+.msg.user .acts button{color:#d6e8ff;border-color:rgba(255,255,255,.4)}
+#chips{padding:0 0 8px}
+.chip{position:relative;display:inline-block;margin-right:8px}.chip img{height:52px;border-radius:8px;border:1px solid var(--line2);display:block}
+.chip b{position:absolute;top:-6px;right:-6px;background:var(--red);border-radius:50%;width:17px;height:17px;font-size:11px;text-align:center;line-height:17px;cursor:pointer}
+.msg img.att{max-height:140px;border-radius:8px;margin:0 6px 6px 0;vertical-align:top}
+.mrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}.mrow span{flex:1}.mrow small{color:var(--muted)}
+.prog{height:6px;background:#12254a;border-radius:4px;overflow:hidden;margin-top:6px}.prog i{display:block;height:100%;width:0;background:var(--blue);transition:width .3s}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.item input{padding:2px 6px}
+.sbox.w{max-width:760px}
 @media(max-width:1000px){
+  .smeters{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}
   .hero{grid-template-columns:1fr 1fr}.hero .center{grid-column:1/-1;order:-1}
   .row2,.row3,.mcards{grid-template-columns:1fr}
   #side{display:none}#ttl small{display:none}#clock{display:none}#tabs button{padding:7px 10px}
@@ -144,6 +162,7 @@ h3 i{font-style:normal;color:var(--blue)}
 <section id="tab-chat" class="tab on">
   <aside id="side" class="card">
     <button id="newChat" class="primary">＋ 新對話</button>
+    <input id="q" placeholder="搜尋對話…">
     <div id="list"></div>
   </aside>
   <div id="chatcol" class="card">
@@ -153,7 +172,8 @@ h3 i{font-style:normal;color:var(--blue)}
       <span id="status"><span class="dot"></span>連線中…</span>
     </div>
     <div id="chat"><div class="wrap" id="msgs"></div></div>
-    <div id="composer"><div class="wrap">
+    <div id="composer"><div class="wrap" id="chips" style="flex-direction:row;flex-wrap:wrap;gap:0"></div><div class="wrap">
+      <button id="attach" title="附加圖片（視覺模型）" style="display:none">📎</button><input type="file" id="file" accept="image/*" multiple hidden>
       <textarea id="input" rows="1" placeholder="輸入訊息，Enter 送出，Shift+Enter 換行"></textarea>
       <button id="send" class="primary">送出</button>
     </div></div>
@@ -169,6 +189,7 @@ h3 i{font-style:normal;color:var(--blue)}
       <div><label>狀態</label><div class="v" id="hState"><span class="dot"></span>待機</div></div>
       <div><label>目前階段</label><div class="v" id="hStage">—</div></div>
       <div><label>已執行時間</label><div class="v" id="hElapsed">00:00:00</div></div>
+      <button id="unload" style="align-self:flex-start;font-size:12px;padding:3px 12px" title="立即把模型從記憶體卸載">⏏ 卸載模型</button>
     </div>
     <div class="gauge" id="g1"></div>
     <div class="center">
@@ -183,6 +204,16 @@ h3 i{font-style:normal;color:var(--blue)}
       <div><label>模型大小</label><div class="v" id="rSize">—</div></div>
       <div><label>GPU/統一記憶體 (VRAM)</label><div class="v" id="rVram">—</div></div>
       <div><label>自動卸載倒數</label><div class="v" id="rExp">—</div></div>
+    </div>
+  </div>
+
+  <div class="sys card">
+    <h3><i>🖥</i>主機資源狀態 <small id="sysName" style="color:var(--muted);font-weight:400">讀取中…</small></h3>
+    <div class="smeters">
+      <div class="sm"><span>CPU</span><b id="sCpu">—</b><div class="meter"><i id="mCpu"></i></div></div>
+      <div class="sm"><span>記憶體</span><b id="sMem">—</b><div class="meter"><i id="mMem"></i></div></div>
+      <div class="sm"><span>磁碟</span><b id="sDisk">—</b><div class="meter"><i id="mDisk"></i></div></div>
+      <div class="sm"><span>CPU 溫度</span><b id="sTemp">—</b><div class="meter"><i id="mTemp"></i></div></div>
     </div>
   </div>
 
@@ -225,13 +256,36 @@ h3 i{font-style:normal;color:var(--blue)}
 
 <!-- 設定 -->
 <section id="tab-settings" class="tab">
-  <div class="sbox card">
-    <h3>設定</h3>
-    <label>Ollama 位址<input id="host" placeholder="留空 = 同源 (serve.py 代理)"></label>
-    <p>填 <code>主機:埠</code>。Ollama 在別台機器時，可填那台 serve.py 的位址（如 100.x.x.x:8080）。</p>
-    <label>系統提示詞<textarea id="system" rows="4" placeholder="例如：你是一位樂於助人的助理，請用繁體中文回答。"></textarea></label>
-    <label>Temperature：<span id="tv">0.7</span><input id="temp" type="range" min="0" max="2" step="0.1" value="0.7"></label>
-    <div><button id="resetStats">清除統計資料</button></div>
+  <div class="sbox w">
+    <div class="card" style="padding:18px;display:flex;flex-direction:column;gap:12px">
+      <h3>連線與生成</h3>
+      <label>Ollama 位址<input id="host" placeholder="留空 = 同源 (serve.py 代理)"></label>
+      <p>填 <code>主機:埠</code>。Ollama 在別台機器時，填那台 serve.py 的位址（如 100.x.x.x:8080）。</p>
+      <label>系統提示詞<textarea id="system" rows="3" placeholder="例如：你是一位樂於助人的助理，請用繁體中文回答。"></textarea></label>
+      <label>Temperature：<span id="tv">0.7</span><input id="temp" type="range" min="0" max="2" step="0.1" value="0.7"></label>
+      <div class="grid2">
+        <label>思考模式（Qwen3 等）<select data-cfg="think"><option value="auto">自動（模型預設）</option><option value="on">開啟</option><option value="off">關閉（更快）</option></select></label>
+        <label>Top P<input data-cfg="top_p" placeholder="預設"></label>
+        <label>上下文長度 num_ctx<input data-cfg="num_ctx" placeholder="預設（常為 4096）"></label>
+        <label>最大輸出 tokens<input data-cfg="num_predict" placeholder="不限制"></label>
+        <label>模型常駐時間 keep_alive<input data-cfg="keep_alive" placeholder="預設 5m（例：30m、-1 = 永久）"></label>
+      </div>
+    </div>
+    <div class="card" style="padding:18px;display:flex;flex-direction:column;gap:10px">
+      <h3>模型管理</h3>
+      <div style="display:flex;gap:8px"><input id="pullName" placeholder="要下載的模型，例如 qwen3:4b、llama3.2、gemma3"><button id="pullBtn" class="primary" style="white-space:nowrap">下載</button></div>
+      <small id="pullSt" style="color:var(--muted)"></small><div class="prog"><i id="pullBar"></i></div>
+      <div id="mgr"></div>
+    </div>
+    <div class="card" style="padding:18px;display:flex;flex-direction:column;gap:10px">
+      <h3>資料</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="expMd">匯出目前對話 (.md)</button><button id="expAll">匯出全部對話 (.json)</button>
+        <button id="impBtn">匯入對話 (.json)</button><input type="file" id="impFile" accept=".json" hidden>
+        <button id="resetStats">清除統計資料</button>
+      </div>
+      <small id="saveNote" style="color:var(--muted)"></small>
+    </div>
   </div>
 </section>
 
@@ -242,13 +296,15 @@ let sessions=store.get('sessions',[]), cur=store.get('cur',null), abort=null;
 let stats=store.get('stats',{input:0,output:0,speeds:[],ttft:[],count:0,errors:0});
 let ps=[], ctxLen=4096, state='idle', genStart=0, lastTask='', ctxPct=0, liveSpd=0;
 const startedAt=Date.now();
+const cfg=Object.assign({think:'auto',num_ctx:'',num_predict:'',top_p:'',keep_alive:''},store.get('cfg',{}));
+let pending=[]; // 待送出的圖片 (base64)
 $('host').value=store.get('host','');$('system').value=store.get('system','');
 $('temp').value=store.get('temp',0.7);$('tv').textContent=$('temp').value;
 
 let proxied=false; // true = 由 serve.py / 桌面版代理，目標位址存在伺服器端
 const base=()=>proxied?'':($('host').value.trim().replace(/\/$/,''))||'';
 const session=()=>sessions.find(s=>s.id===cur);
-const save=()=>{store.set('sessions',sessions);store.set('cur',cur)};
+const save=()=>{try{localStorage.setItem('sessions',JSON.stringify(sessions,(k,v)=>k[0]==='_'?undefined:v))}catch{}store.set('cur',cur)};
 const pad=n=>String(n).padStart(2,'0');
 const hms=s=>{s=Math.max(0,Math.floor(s));return `${pad(s/3600|0)}:${pad(s/60%60|0)}:${pad(s%60)}`};
 const gb=b=>(b/1073741824).toFixed(1)+' GB';
@@ -344,7 +400,7 @@ async function pollPs(){
     ps=(await r.json()).models||[];
     const m=ps.find(x=>x.name===$('model').value)||ps[0];
     if(m){
-      ctxLen=m.context_length||ctxLen;
+      ctxLen=cfg.num_ctx?+cfg.num_ctx:(m.context_length||ctxLen);
       $('hModel').textContent=m.name;
       $('rQuant').textContent=`${m.details?.quantization_level||'—'} / ${m.details?.parameter_size||'—'}`;
       $('rSize').textContent=gb(m.size);
@@ -390,67 +446,135 @@ function md(src){
 }
 
 // --- 繪製 ---
+function rename(s,span){
+  const inp=document.createElement('input');inp.value=s.title;span.replaceWith(inp);inp.focus();inp.select();
+  inp.onclick=e=>e.stopPropagation();
+  inp.onblur=()=>{s.title=inp.value.trim()||s.title;save();render()};
+  inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape'){inp.value=s.title;inp.blur()}};
+}
 function render(){
+  const q=$('q').value.trim().toLowerCase();
   $('list').innerHTML='';
-  sessions.forEach(s=>{
+  sessions.filter(s=>!q||s.title.toLowerCase().includes(q)||s.messages.some(m=>m.content.toLowerCase().includes(q))).forEach(s=>{
     const d=document.createElement('div');d.className='item'+(s.id===cur?' active':'');
-    d.innerHTML=`<span>${esc(s.title)}</span><button class="del" title="刪除">✕</button>`;
+    d.innerHTML=`<span title="雙擊重新命名">${esc(s.title)}</span><button class="del" title="刪除">✕</button>`;
     d.onclick=()=>{cur=s.id;save();render()};
-    d.querySelector('.del').onclick=e=>{e.stopPropagation();sessions=sessions.filter(x=>x!==s);if(cur===s.id)cur=sessions[0]?.id??null;save();render()};
+    d.querySelector('span').ondblclick=e=>{e.stopPropagation();rename(s,e.target)};
+    d.querySelector('.del').onclick=e=>{e.stopPropagation();if(!confirm(`刪除「${s.title}」？`))return;sessions=sessions.filter(x=>x!==s);if(cur===s.id)cur=sessions[0]?.id??null;save();render()};
     $('list').appendChild(d);
   });
   const s=session();$('msgs').innerHTML='';
   if(!s||!s.messages.length){$('msgs').innerHTML='<div id="empty"><h2>👋 與本地 AI 對話</h2><p>選好模型後即可開始，所有資料都留在你的電腦。</p></div>';return}
-  s.messages.forEach(addMsg);scrollDown();
+  s.messages.forEach((m,i)=>addMsg(m,i));scrollDown();
 }
 function paint(d,m){
   const th=m.thinking?`<details class="think" ${m.content?'':'open'}><summary>思考過程</summary>${esc(m.thinking)}</details>`:'';
   d.innerHTML=th+md(m.content);
   if(m.stats){const x=document.createElement('div');x.className='meta';x.textContent=m.stats;d.appendChild(x)}
 }
-function addMsg(m){
+function addActions(d,m,i){
+  const s=session(),last=i===s.messages.length-1,lu=s.messages.map(x=>x.role).lastIndexOf('user');
+  const b=(t,act)=>`<button data-act="${act}" data-i="${i}">${t}</button>`;
+  const a=document.createElement('div');a.className='acts';
+  a.innerHTML=b('複製','copy')+(m.role==='assistant'&&last?b('↻ 重新生成','regen'):'')+(m.role==='user'&&i===lu?b('✎ 編輯','edit'):'');
+  d.appendChild(a);
+}
+function addMsg(m,i){
   const d=document.createElement('div');d.className='msg '+m.role;
-  if(m.role==='user')d.textContent=m.content;else paint(d,m);
+  if(m.role==='user'){
+    d.textContent=m.content;
+    (m._img||[]).forEach(b=>{const im=new Image();im.className='att';im.src='data:image/jpeg;base64,'+b;d.prepend(im)});
+    if(!m._img&&m.imgCount)d.prepend(`🖼×${m.imgCount} `);
+  }else paint(d,m);
+  if(i!==undefined)addActions(d,m,i);
   $('msgs').appendChild(d);return d;
 }
 const scrollDown=()=>{$('chat').scrollTop=$('chat').scrollHeight};
-$('msgs').addEventListener('click',e=>{if(e.target.classList.contains('copy')){navigator.clipboard.writeText(e.target.nextSibling.textContent);e.target.textContent='已複製';setTimeout(()=>e.target.textContent='複製',1200)}});
+$('msgs').addEventListener('click',e=>{
+  const t=e.target;
+  if(t.classList.contains('copy')){navigator.clipboard.writeText(t.nextSibling.textContent);t.textContent='已複製';setTimeout(()=>t.textContent='複製',1200);return}
+  const act=t.dataset.act;if(!act)return;
+  const s=session(),i=+t.dataset.i,m=s.messages[i];
+  if(act==='copy'){navigator.clipboard.writeText(m.content);t.textContent='已複製';setTimeout(()=>t.textContent='複製',1200);return}
+  if(abort)return;
+  if(act==='regen'){s.messages.splice(i);save();render();generate(s)}
+  if(act==='edit'){$('input').value=m.content;pending=(m._img||[]).slice();s.messages.splice(i);save();render();renderChips();$('input').focus()}
+});
+$('q').oninput=render;
+
+// --- 圖片（視覺模型）---
+const vis={};
+async function checkVision(){
+  const m=$('model').value;if(!m)return;
+  if(!(m in vis)){
+    try{const r=await fetch(base()+'/api/show',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:m})});
+      vis[m]=((await r.json()).capabilities||[]).includes('vision')}catch{vis[m]=false}
+  }
+  $('attach').style.display=vis[m]?'':'none';
+}
+function renderChips(){
+  $('chips').innerHTML=pending.map((b,i)=>`<span class="chip"><img src="data:image/jpeg;base64,${b}"><b data-rm="${i}">×</b></span>`).join('');
+}
+$('chips').onclick=e=>{if(e.target.dataset.rm!==undefined){pending.splice(+e.target.dataset.rm,1);renderChips()}};
+$('attach').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  for(const f of e.target.files){
+    const url=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
+    const img=await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=url});
+    const k=Math.min(1,1024/Math.max(img.width,img.height)),c=document.createElement('canvas');
+    c.width=img.width*k;c.height=img.height*k;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    pending.push(c.toDataURL('image/jpeg',.85).split(',')[1]);
+  }
+  e.target.value='';renderChips();
+};
 
 // --- 模型 ---
 function setStatus(cls,txt){$('status').innerHTML=`<span class="dot ${cls}"></span>${txt}`;$('fConn').textContent=txt}
 async function loadModels(){
   try{
     const r=await fetch(base()+'/api/tags');if(!r.ok)throw 0;
-    const {models}=await r.json();installed=models;
+    const {models}=await r.json();installed=models;renderManager();
     const saved=store.get('model','');
     $('model').innerHTML=models.map(m=>`<option>${esc(m.name)}</option>`).join('')||'<option value="">（沒有模型，請先 ollama pull）</option>';
     if(models.some(m=>m.name===saved))$('model').value=saved;
     setStatus('ok',`已連線 · ${models.length} 個模型`);log('System',`已連線 Ollama，共 ${models.length} 個模型`);
-    pollPs();
+    pollPs();checkVision();
   }catch{setStatus('err','無法連線 Ollama');log('System','無法連線 Ollama','e')}
 }
 
 // --- 送出 ---
+function genOpts(){
+  const o={temperature:+$('temp').value};
+  if(cfg.top_p!=='')o.top_p=+cfg.top_p;if(cfg.num_ctx!=='')o.num_ctx=+cfg.num_ctx;if(cfg.num_predict!=='')o.num_predict=+cfg.num_predict;
+  return o;
+}
 async function send(){
   if(abort){abort.abort();return}
   const text=$('input').value.trim();if(!text||!$('model').value)return;
   if(!session())newChat();
   const s=session();
-  s.messages.push({role:'user',content:text});
+  const um={role:'user',content:text};
+  if(pending.length){um._img=pending;um.imgCount=pending.length}
+  s.messages.push(um);pending=[];renderChips();
   if(s.messages.length===1)s.title=text.slice(0,30);
   $('input').value='';$('input').style.height='';
-  render();
+  render();generate(s);
+}
+async function generate(s){
   const a={role:'assistant',content:''};s.messages.push(a);
   const el=addMsg(a);el.classList.add('cursor');scrollDown();
   $('send').textContent='停止';abort=new AbortController();
-  lastTask=text;state='wait';genStart=Date.now();liveSpd=0;
-  log('Chat',`開始 ${$('model').value}：${text.slice(0,30)}`);
+  const lastU=[...s.messages].reverse().find(m=>m.role==='user');
+  lastTask=lastU?.content||'';state='wait';genStart=Date.now();liveSpd=0;
+  log('Chat',`開始 ${$('model').value}：${lastTask.slice(0,30)}`);
   const msgs=[];const sys=$('system').value.trim();if(sys)msgs.push({role:'system',content:sys});
-  s.messages.slice(0,-1).forEach(m=>msgs.push({role:m.role,content:m.content}));
+  s.messages.slice(0,-1).forEach(m=>{const o={role:m.role,content:m.content};if(m._img?.length)o.images=m._img;msgs.push(o)});
+  const body={model:$('model').value,messages:msgs,stream:true,options:genOpts()};
+  if(cfg.think==='on')body.think=true;else if(cfg.think==='off')body.think=false;
+  if(cfg.keep_alive!=='')body.keep_alive=/^-?\d+$/.test(cfg.keep_alive)?+cfg.keep_alive:cfg.keep_alive;
   let chunks=0,firstAt=0,ttft=0;
   try{
-    const r=await fetch(base()+'/api/chat',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:$('model').value,messages:msgs,stream:true,options:{temperature:+$('temp').value}})});
+    const r=await fetch(base()+'/api/chat',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok)throw new Error(await r.text());
     const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
     while(true){
@@ -468,11 +592,12 @@ async function send(){
         if(m?.content){state='gen';a.content+=m.content;paint(el,a);scrollDown()}
         if(j.done&&j.eval_count){
           const spd=j.eval_count/(j.eval_duration/1e9);liveSpd=spd;
-          a.stats=`${j.eval_count} tokens · ${spd.toFixed(1)} tok/s`;
           stats.input+=j.prompt_eval_count||0;stats.output+=j.eval_count;
           stats.speeds.push(+spd.toFixed(1));if(ttft)stats.ttft.push(ttft);stats.count++;
           ctxPct=Math.min(100,((j.prompt_eval_count||0)+j.eval_count)/ctxLen*100);
+          a.stats=`${j.eval_count} tokens · ${spd.toFixed(1)} tok/s`+(ctxPct>85?' · ⚠ 上下文接近上限，較早的內容可能被截斷（可在設定調高 num_ctx）':'');
           log('Chat',`完成：${j.eval_count} tokens，${spd.toFixed(1)} tok/s`);
+          if(ctxPct>85)log('Chat',`上下文使用 ${Math.round(ctxPct)}%`,'e');
         }
       }
     }
@@ -504,6 +629,92 @@ if(!session()&&sessions.length)cur=sessions[0].id;
   loadModels();
 })();
 render();refreshStats();tick();
+
+// --- 進階設定 ---
+document.querySelectorAll('[data-cfg]').forEach(i=>{i.value=cfg[i.dataset.cfg];i.onchange=()=>{cfg[i.dataset.cfg]=i.value.trim();store.set('cfg',cfg)}});
+$('model').addEventListener('change',checkVision);
+
+// --- 主機資源 ---
+async function pollSys(){
+  if(!$('tab-monitor').classList.contains('on'))return;
+  try{
+    const r=await fetch('/__sys');if(!r.ok)throw 0;const j=await r.json();
+    if(j.cpu===undefined){$('sysName').textContent=j.error||'無資料';return}
+    $('sysName').textContent=`${j.host} · ${j.os}${j.cores?' · '+j.cores+' 執行緒':''}`;
+    $('sCpu').textContent=j.cpu.toFixed(0)+'%';$('mCpu').style.width=j.cpu+'%';
+    $('sMem').textContent=`${gb(j.mem_used)} / ${gb(j.mem_total)}`;$('mMem').style.width=(j.mem_used/j.mem_total*100)+'%';
+    $('sDisk').textContent=j.disk!==undefined?j.disk.toFixed(0)+'%':'—';$('mDisk').style.width=(j.disk||0)+'%';
+    $('sTemp').textContent=j.temp!==undefined?j.temp.toFixed(0)+' °C':'—';$('mTemp').style.width=Math.min(100,j.temp||0)+'%';
+  }catch{$('sysName').textContent='無法取得（直連 Ollama 時不支援，請改用 serve.py / 桌面版）'}
+}
+setInterval(pollSys,3000);
+document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>setTimeout(pollSys,50)));
+
+// --- 卸載模型 ---
+$('unload').onclick=async()=>{
+  const m=$('model').value;if(!m)return;
+  try{await fetch(base()+'/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:m,keep_alive:0})});log('System',`已卸載 ${m}`);setTimeout(pollPs,500)}
+  catch(e){log('System',e.message,'e')}
+};
+
+// --- 模型管理 ---
+function renderManager(){
+  $('mgr').innerHTML=installed.map(m=>`<div class="mrow"><span>${esc(m.name)}</span><small>${gb(m.size)}</small><button data-del="${esc(m.name)}">刪除</button></div>`).join('')||'<small>沒有模型</small>';
+}
+$('mgr').onclick=async e=>{
+  const n=e.target.dataset.del;if(!n||!confirm(`確定刪除模型 ${n}？`))return;
+  await fetch(base()+'/api/delete',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:n})});
+  log('System','已刪除 '+n);loadModels();
+};
+$('pullBtn').onclick=async()=>{
+  const name=$('pullName').value.trim();if(!name)return;
+  $('pullBtn').disabled=true;const st=$('pullSt'),bar=$('pullBar');st.textContent='連線中…';
+  try{
+    const r=await fetch(base()+'/api/pull',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:name,stream:true})});
+    if(!r.ok)throw new Error(await r.text());
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+    while(true){
+      const {done,value}=await rd.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});const ls=buf.split('\n');buf=ls.pop();
+      for(const l of ls){if(!l.trim())continue;const j=JSON.parse(l);if(j.error)throw new Error(j.error);
+        st.textContent=j.status+(j.total?`  ${gb(j.completed||0)} / ${gb(j.total)}`:'');bar.style.width=j.total?(j.completed/j.total*100)+'%':'0%'}
+    }
+    st.textContent='✓ 下載完成';log('System','已下載 '+name);loadModels();
+  }catch(e){st.textContent='失敗：'+e.message;log('System',e.message,'e')}
+  $('pullBtn').disabled=false;
+};
+
+// --- 匯出 / 匯入 ---
+async function saveFile(name,text,type){
+  if(proxied){
+    try{const r=await fetch('/__save?name='+encodeURIComponent(name),{method:'POST',body:text});
+      if(r.ok){const j=await r.json();$('saveNote').textContent='已儲存：'+j.path;log('System','已匯出 '+j.path);return}}catch{}
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();
+}
+$('expAll').onclick=()=>saveFile('ollama-chats.json',JSON.stringify(sessions,(k,v)=>k[0]==='_'?undefined:v,2),'application/json');
+$('expMd').onclick=()=>{
+  const s=session();if(!s){$('saveNote').textContent='沒有選取的對話';return}
+  const md=`# ${s.title}\n\n`+s.messages.map(m=>`**${m.role==='user'?'你':'AI'}：**\n\n${m.content}\n`).join('\n');
+  saveFile((s.title.replace(/[\\/:*?"<>|]/g,'_')||'chat')+'.md',md,'text/markdown');
+};
+$('impBtn').onclick=()=>$('impFile').click();
+$('impFile').onchange=async e=>{
+  try{
+    const arr=JSON.parse(await e.target.files[0].text());
+    const have=new Set(sessions.map(s=>s.id));let n=0;
+    arr.forEach(s=>{if(s&&s.id&&Array.isArray(s.messages)&&!have.has(s.id)){sessions.push(s);n++}});
+    save();render();$('saveNote').textContent=`已匯入 ${n} 個對話`;
+  }catch(err){$('saveNote').textContent='匯入失敗：'+err.message}
+  e.target.value='';
+};
+
+// --- 快捷鍵 ---
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();document.querySelector('#tabs button[data-tab=chat]').click();newChat();$('input').focus()}
+  if(e.key==='Escape'&&abort)abort.abort();
+});
+$('input').placeholder='輸入訊息，Enter 送出，Shift+Enter 換行　（Ctrl+K 新對話，Esc 停止）';
 </script>
 </body>
 </html>
