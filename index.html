@@ -45,6 +45,7 @@ input,select,textarea{font:inherit;color:var(--text);background:var(--bg);border
 .msg h1,.msg h2,.msg h3{margin:.6em 0 .3em;line-height:1.3}
 .msg a{color:var(--accent)}
 .meta{font-size:11px;color:var(--muted);margin-top:4px}
+.think{font-size:13px;color:var(--muted);white-space:pre-wrap;margin-bottom:8px}.think summary{cursor:pointer}
 .cursor::after{content:"▍";animation:b 1s infinite}@keyframes b{50%{opacity:0}}
 #empty{text-align:center;color:var(--muted);margin-top:15vh}
 #composer{border-top:1px solid var(--border);padding:12px 16px}
@@ -126,9 +127,13 @@ function render(){
 }
 function addMsg(m){
   const d=document.createElement('div');d.className='msg '+m.role;
-  if(m.role==='user')d.textContent=m.content;else d.innerHTML=md(m.content);
-  if(m.stats){const x=document.createElement('div');x.className='meta';x.textContent=m.stats;d.appendChild(x)}
+  if(m.role==='user')d.textContent=m.content;else paint(d,m);
   $('msgs').appendChild(d);return d;
+}
+function paint(d,m){
+  const th=m.thinking?`<details class="think" ${m.content?'':'open'}><summary>思考過程</summary>${esc(m.thinking)}</details>`:'';
+  d.innerHTML=th+md(m.content);
+  if(m.stats){const x=document.createElement('div');x.className='meta';x.textContent=m.stats;d.appendChild(x)}
 }
 const scrollDown=()=>{$('chat').scrollTop=$('chat').scrollHeight};
 $('msgs').addEventListener('click',e=>{if(e.target.classList.contains('copy')){navigator.clipboard.writeText(e.target.nextSibling.textContent);e.target.textContent='已複製';setTimeout(()=>e.target.textContent='複製',1200)}});
@@ -174,13 +179,14 @@ async function send(){
       const lines=buf.split('\n');buf=lines.pop();
       for(const l of lines){if(!l.trim())continue;const j=JSON.parse(l);
         if(j.error)throw new Error(j.error);
-        if(j.message?.content){a.content+=j.message.content;el.innerHTML=md(a.content);scrollDown()}
+        if(j.message?.thinking){a.thinking=(a.thinking||'')+j.message.thinking;paint(el,a);scrollDown()}
+        if(j.message?.content){a.content+=j.message.content;paint(el,a);scrollDown()}
         if(j.done&&j.eval_count)a.stats=`${j.eval_count} tokens · ${(j.eval_count/(j.eval_duration/1e9)).toFixed(1)} tok/s`;
       }
     }
   }catch(e){if(e.name!=='AbortError')a.content+=`\n\n⚠️ 錯誤：${e.message}`}
   abort=null;$('send').textContent='送出';
-  if(!a.content)s.messages.pop();
+  if(!a.content&&!a.thinking)s.messages.pop();
   save();render();
 }
 
