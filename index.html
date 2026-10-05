@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ollama 本地 AI 對話</title>
+<style>
+:root{--bg:#fff;--panel:#f5f5f7;--text:#1d1d1f;--muted:#6e6e73;--border:#e0e0e5;--accent:#0a84ff;--user:#0a84ff;--userText:#fff;--ai:#f0f0f3;--code:#1e1e24;--codeText:#e8e8ee}
+@media(prefers-color-scheme:dark){:root{--bg:#161618;--panel:#1f1f23;--text:#f2f2f5;--muted:#9a9aa3;--border:#2e2e34;--ai:#26262b}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--text);display:flex}
+#side{width:260px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+#side header{padding:12px}
+button{font:inherit;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;padding:7px 12px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+#newChat{width:100%}
+#list{flex:1;overflow:auto;padding:0 8px}
+.item{display:flex;align-items:center;gap:4px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px}
+.item:hover,.item.active{background:var(--border)}
+.item span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .del{border:0;background:none;color:var(--muted);padding:0 4px;visibility:hidden}
+.item:hover .del{visibility:visible}
+#settings{border-top:1px solid var(--border);padding:12px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+#settings label{color:var(--muted);display:flex;flex-direction:column;gap:3px}
+input,select,textarea{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 8px;width:100%}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#top{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border)}
+#top select{max-width:300px}
+#status{font-size:12px;color:var(--muted);margin-left:auto}
+#status.ok::before,#status.err::before{content:"●";margin-right:5px}
+#status.ok::before{color:#30d158}#status.err::before{color:#ff453a}
+#chat{flex:1;overflow:auto;padding:20px 16px}
+.wrap{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:88%;padding:10px 14px;border-radius:16px;word-wrap:break-word;overflow-wrap:anywhere;position:relative}
+.msg.user{align-self:flex-end;background:var(--user);color:var(--userText);white-space:pre-wrap}
+.msg.assistant{align-self:flex-start;background:var(--ai)}
+.msg p{margin:.4em 0}.msg p:first-child{margin-top:0}.msg p:last-child{margin-bottom:0}
+.msg pre{background:var(--code);color:var(--codeText);padding:12px;border-radius:10px;overflow:auto;position:relative;margin:.6em 0}
+.msg code{font:13px/1.5 ui-monospace,Menlo,monospace}
+.msg :not(pre)>code{background:rgba(127,127,127,.2);padding:1px 5px;border-radius:5px}
+.msg pre .copy{position:absolute;top:6px;right:6px;font-size:11px;padding:2px 8px;background:#333;color:#ddd;border-color:#444}
+.msg ul,.msg ol{margin:.4em 0;padding-left:1.4em}
+.msg h1,.msg h2,.msg h3{margin:.6em 0 .3em;line-height:1.3}
+.msg a{color:var(--accent)}
+.meta{font-size:11px;color:var(--muted);margin-top:4px}
+.cursor::after{content:"▍";animation:b 1s infinite}@keyframes b{50%{opacity:0}}
+#empty{text-align:center;color:var(--muted);margin-top:15vh}
+#composer{border-top:1px solid var(--border);padding:12px 16px}
+#composer .wrap{flex-direction:row;align-items:flex-end;gap:8px}
+#input{resize:none;max-height:200px;min-height:44px;flex:1}
+</style>
+</head>
+<body>
+<aside id="side">
+  <header><button id="newChat" class="primary">＋ 新對話</button></header>
+  <div id="list"></div>
+  <div id="settings">
+    <label>Ollama 位址<input id="host" placeholder="留空 = 同源 (serve.py 代理)"></label>
+    <label>系統提示詞<textarea id="system" rows="3" placeholder="例如：你是一位樂於助人的助理，請用繁體中文回答。"></textarea></label>
+    <label>Temperature：<span id="tv">0.7</span><input id="temp" type="range" min="0" max="2" step="0.1" value="0.7"></label>
+  </div>
+</aside>
+<section id="main">
+  <div id="top">
+    <select id="model"></select>
+    <button id="refresh" title="重新載入模型">⟳</button>
+    <span id="status">連線中…</span>
+  </div>
+  <div id="chat"><div class="wrap" id="msgs"></div></div>
+  <div id="composer"><div class="wrap">
+    <textarea id="input" rows="1" placeholder="輸入訊息，Enter 送出，Shift+Enter 換行"></textarea>
+    <button id="send" class="primary">送出</button>
+  </div></div>
+</section>
+
+<script>
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set(k,v){localStorage.setItem(k,JSON.stringify(v))}};
+let sessions=store.get('sessions',[]), cur=store.get('cur',null), abort=null;
+$('host').value=store.get('host','');$('system').value=store.get('system','');
+$('temp').value=store.get('temp',0.7);$('tv').textContent=$('temp').value;
+
+const base=()=>($('host').value.trim().replace(/\/$/,''))||'';
+const session=()=>sessions.find(s=>s.id===cur);
+const save=()=>{store.set('sessions',sessions);store.set('cur',cur)};
+
+function newChat(){const s={id:Date.now().toString(36),title:'新對話',messages:[]};sessions.unshift(s);cur=s.id;save();render()}
+
+// --- 極簡 Markdown ---
+const esc=t=>t.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function inline(t){return esc(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>').replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')}
+function md(src){
+  const parts=src.split(/```/);let out='';
+  parts.forEach((p,i)=>{
+    if(i%2){const nl=p.indexOf('\n');const code=nl>=0?p.slice(nl+1):p;out+=`<pre><button class="copy">複製</button><code>${esc(code.replace(/\n$/,''))}</code></pre>`;return}
+    let html='',list=null;
+    const close=()=>{if(list){html+=`</${list}>`;list=null}};
+    p.split('\n').forEach(line=>{
+      let m;
+      if(m=line.match(/^(#{1,3})\s+(.*)/)){close();html+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}
+      else if(m=line.match(/^\s*[-*]\s+(.*)/)){if(list!=='ul'){close();html+='<ul>';list='ul'}html+=`<li>${inline(m[1])}</li>`}
+      else if(m=line.match(/^\s*\d+[.)]\s+(.*)/)){if(list!=='ol'){close();html+='<ol>';list='ol'}html+=`<li>${inline(m[1])}</li>`}
+      else if(line.trim()===''){close()}
+      else{close();html+=`<p>${inline(line)}</p>`}
+    });
+    close();out+=html;
+  });
+  return out;
+}
+
+// --- 繪製 ---
+function render(){
+  $('list').innerHTML='';
+  sessions.forEach(s=>{
+    const d=document.createElement('div');d.className='item'+(s.id===cur?' active':'');
+    d.innerHTML=`<span>${esc(s.title)}</span><button class="del" title="刪除">✕</button>`;
+    d.onclick=()=>{cur=s.id;save();render()};
+    d.querySelector('.del').onclick=e=>{e.stopPropagation();sessions=sessions.filter(x=>x!==s);if(cur===s.id)cur=sessions[0]?.id??null;save();render()};
+    $('list').appendChild(d);
+  });
+  const s=session();$('msgs').innerHTML='';
+  if(!s||!s.messages.length){$('msgs').innerHTML='<div id="empty"><h2>👋 與本地 AI 對話</h2><p>選好模型後即可開始，所有資料都留在你的電腦。</p></div>';return}
+  s.messages.forEach(addMsg);scrollDown();
+}
+function addMsg(m){
+  const d=document.createElement('div');d.className='msg '+m.role;
+  if(m.role==='user')d.textContent=m.content;else d.innerHTML=md(m.content);
+  if(m.stats){const x=document.createElement('div');x.className='meta';x.textContent=m.stats;d.appendChild(x)}
+  $('msgs').appendChild(d);return d;
+}
+const scrollDown=()=>{$('chat').scrollTop=$('chat').scrollHeight};
+$('msgs').addEventListener('click',e=>{if(e.target.classList.contains('copy')){navigator.clipboard.writeText(e.target.nextSibling.textContent);e.target.textContent='已複製';setTimeout(()=>e.target.textContent='複製',1200)}});
+
+// --- 模型 ---
+async function loadModels(){
+  const st=$('status');
+  try{
+    const r=await fetch(base()+'/api/tags');if(!r.ok)throw 0;
+    const {models}=await r.json();
+    const saved=store.get('model','');
+    $('model').innerHTML=models.map(m=>`<option>${esc(m.name)}</option>`).join('')||'<option value="">（沒有模型，請先 ollama pull）</option>';
+    if(models.some(m=>m.name===saved))$('model').value=saved;
+    st.textContent=`已連線 · ${models.length} 個模型`;st.className='ok';
+  }catch{
+    st.textContent='無法連線 Ollama';st.className='err';
+  }
+}
+
+// --- 送出 ---
+async function send(){
+  if(abort){abort.abort();return}
+  const text=$('input').value.trim();if(!text||!$('model').value)return;
+  if(!session())newChat();
+  const s=session();
+  s.messages.push({role:'user',content:text});
+  if(s.messages.length===1)s.title=text.slice(0,30);
+  $('input').value='';$('input').style.height='';
+  render();
+  const a={role:'assistant',content:''};s.messages.push(a);
+  const el=addMsg(a);el.classList.add('cursor');scrollDown();
+  $('send').textContent='停止';abort=new AbortController();
+  const msgs=[];const sys=$('system').value.trim();if(sys)msgs.push({role:'system',content:sys});
+  s.messages.slice(0,-1).forEach(m=>msgs.push({role:m.role,content:m.content}));
+  try{
+    const r=await fetch(base()+'/api/chat',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:$('model').value,messages:msgs,stream:true,options:{temperature:+$('temp').value}})});
+    if(!r.ok)throw new Error(await r.text());
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+    while(true){
+      const {done,value}=await rd.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split('\n');buf=lines.pop();
+      for(const l of lines){if(!l.trim())continue;const j=JSON.parse(l);
+        if(j.error)throw new Error(j.error);
+        if(j.message?.content){a.content+=j.message.content;el.innerHTML=md(a.content);scrollDown()}
+        if(j.done&&j.eval_count)a.stats=`${j.eval_count} tokens · ${(j.eval_count/(j.eval_duration/1e9)).toFixed(1)} tok/s`;
+      }
+    }
+  }catch(e){if(e.name!=='AbortError')a.content+=`\n\n⚠️ 錯誤：${e.message}`}
+  abort=null;$('send').textContent='送出';
+  if(!a.content)s.messages.pop();
+  save();render();
+}
+
+// --- 事件 ---
+$('send').onclick=send;$('newChat').onclick=newChat;$('refresh').onclick=loadModels;
+$('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}});
+$('input').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,200)+'px'});
+$('model').onchange=()=>store.set('model',$('model').value);
+$('host').onchange=()=>{store.set('host',$('host').value);loadModels()};
+$('system').onchange=()=>store.set('system',$('system').value);
+$('temp').oninput=()=>{$('tv').textContent=$('temp').value;store.set('temp',+$('temp').value)};
+
+if(!session()&&sessions.length)cur=sessions[0].id;
+render();loadModels();
+</script>
+</body>
+</html>
